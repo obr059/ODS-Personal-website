@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Air Hockey</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            touch-action: none; /* Disable default touch actions */
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+
+        canvas {
+            display: block;
+            background: radial-gradient(circle at center, #222 0%, #000 100%);
+            cursor: none; /* Hide cursor over game */
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .score-board {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding-top: 20px;
+            font-size: 4rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px currentColor;
+            z-index: 10;
+        }
+
+        .score {
+            margin: 0 40px;
+            opacity: 0.8;
+        }
+
+        #player-score { color: #00f3ff; }
+        #ai-score { color: #ff0055; }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+            transition: opacity 0.3s;
+        }
+
+        #overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00f3ff, #ff0055);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(255,255,255,0.2);
+        }
+
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            color: #ddd;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            background: transparent;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        button:hover {
+            background: #fff;
+            color: #000;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.6);
+            transform: scale(1.05);
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* --- Pause Menu & HUD --- */
+        .top-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            pointer-events: auto; /* Enable clicking */
+            z-index: 15;
+        }
+
+        #pause-btn-hud {
+            padding: 10px 15px;
+            font-size: 1rem;
+            min-width: 50px;
+        }
+
+        #pause-menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 25;
+            transition: opacity 0.2s;
+        }
+
+        #pause-menu h2 {
+            font-size: 3rem;
+            color: #fff;
+            margin-bottom: 30px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+            letter-spacing: 5px;
+        }
+
+        .menu-btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Utility */
+        .hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* --- New Difficulty Styles --- */
+        .difficulty-container {
+            margin-bottom: 25px;
+            display: flex;
+            gap: 15px;
+            z-index: 30;
+        }
+
+        .difficulty-label {
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 10px 20px;
+            border: 1px solid #444;
+            border-radius: 30px;
+            transition: all 0.2s;
+            opacity: 0.7;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+        }
+
+        .difficulty-label:hover {
+            border-color: #fff;
+            opacity: 1;
+            transform: translateY(-2px);
+        }
+
+        input[type="radio"] {
+            display: none;
+        }
+
+        /* Style the text when selected */
+        input[type="radio"]:checked + span {
+            color: #00f3ff;
+            text-shadow: 0 0 10px #00f3ff;
+            font-weight: bold;
+        }
+        
+        /* Style the container when selected (using :has for modern browsers) */
+        .difficulty-label:has(input:checked) {
+            border-color: #00f3ff;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.2);
+            opacity: 1;
+            background: rgba(0, 243, 255, 0.1);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui-layer">
+            <div class="score-board">
+                <span id="player-score" class="score">0</span>
+                <span class="divider">-</span>
+                <span id="ai-score" class="score">0</span>
+            </div>
+            <div class="top-controls">
+                <button id="pause-btn-hud" class="hidden">II</button>
+            </div>
+            <div class="controls-hint">Mouse / Touch to Move</div>
+        </div>
+
+        <!-- Pause Menu -->
+        <div id="pause-menu" class="hidden">
+            <h2>PAUSED</h2>
+            <div class="menu-btn-group">
+                <button id="resume-btn">Resume</button>
+                <button id="quit-btn">Main Menu</button>
+            </div>
+        </div>
+
+        <div id="overlay">
+            <h1 id="title-text">NEON HOCKEY</h1>
+            <p id="status-text">First to 7 wins!</p>
+            
+            <div class="difficulty-container">
+                <label class="difficulty-label">
+                    <input type="radio" name="difficulty" value="easy">
+                    <span>EASY</span>
+                </label>
+                <label class="difficulty-label">
+                    <input type="radio" name="difficulty" value="medium" checked>
+                    <span>MEDIUM</span>
+                </label>
+                <label class="difficulty-label">
+                    <input type="radio" name="difficulty" value="hard">
+                    <span>HARD</span>
+                </label>
+            </div>
+
+            <button id="start-btn">Start Game</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const TABLE_WIDTH_RATIO = 1.6; // Aspect ratio
+        const PUCK_RADIUS_PCT = 0.025;
+        const PADDLE_RADIUS_PCT = 0.05; // Slightly larger paddles
+        const GOAL_SIZE_PCT = 0.35;
+        const MAX_SPEED = 30; // Reduced from 40 to 30 for better control
+        const FRICTION = 0.993; // Balanced friction (was 0.994)
+        const WALL_BOUNCE = 0.85; // Energy loss on wall hit
+        // AI_SPEED_FACTOR removed in favor of dynamic settings
+        const WIN_SCORE = 7;
+
+        const DIFFICULTY_SETTINGS = {
+            easy: { aiSpeed: 0.055, aggressive: false },
+            medium: { aiSpeed: 0.095, aggressive: false },
+            hard: { aiSpeed: 0.18, aggressive: true }
+        };
+        let currentDifficulty = DIFFICULTY_SETTINGS.medium;
+
+        // --- State ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const startBtn = document.getElementById('start-btn');
+        const statusText = document.getElementById('status-text');
+        const titleText = document.getElementById('title-text');
+        const pScoreEl = document.getElementById('player-score');
+        const aScoreEl = document.getElementById('ai-score');
+        
+        // Pause Elements
+        const pauseBtnHud = document.getElementById('pause-btn-hud');
+        const pauseMenu = document.getElementById('pause-menu');
+        const resumeBtn = document.getElementById('resume-btn');
+        const quitBtn = document.getElementById('quit-btn');
+
+        let width, height;
+        let animationId;
+        let isPlaying = false;
+        let isPaused = false;
+        let scores = { player: 0, ai: 0 };
+        let mouse = { x: 0, y: 0 };
+
+        // Game Objects
+        const puck = {
+            x: 0, y: 0, radius: 0,
+            vx: 0, vy: 0,
+            speed: 0,
+            color: '#fff',
+            shadow: '#fff'
+        };
+
+        const player = {
+            x: 0, y: 0, radius: 0,
+            color: '#00f3ff',
+            score: 0
+        };
+
+        const ai = {
+            x: 0, y: 0, radius: 0,
+            color: '#ff0055',
+            score: 0,
+            targetY: 0
+        };
+
+        // --- Initialization ---
+
+        function resize() {
+            // Calculate max available size maintaining aspect ratio
+            const maxWidth = window.innerWidth - 20;
+            const maxHeight = window.innerHeight - 20;
+
+            if (maxWidth / maxHeight > TABLE_WIDTH_RATIO) {
+                height = maxHeight;
+                width = height * TABLE_WIDTH_RATIO;
+            } else {
+                width = maxWidth;
+                height = width / TABLE_WIDTH_RATIO;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // Update dimensions based on new size
+            puck.radius = width * PUCK_RADIUS_PCT;
+            player.radius = width * PADDLE_RADIUS_PCT;
+            ai.radius = width * PADDLE_RADIUS_PCT;
+
+            // Reposition if needed (e.g. during resize paused)
+            if (!isPlaying) resetPositions();
+        }
+
+        function resetPositions() {
+            puck.x = width / 2;
+            puck.y = height / 2;
+            puck.vx = 0;
+            puck.vy = 0;
+
+            player.x = width * 0.1;
+            player.y = height / 2;
+            
+            ai.x = width * 0.9;
+            ai.y = height / 2;
+
+            // Sync mouse tracker
+            mouse.x = player.x;
+            mouse.y = player.y;
+        }
+
+        function getDifficulty() {
+            const radios = document.getElementsByName('difficulty');
+            for (const radio of radios) {
+                if (radio.checked) return DIFFICULTY_SETTINGS[radio.value];
+            }
+            return DIFFICULTY_SETTINGS.medium;
+        }
+
+        function resetGame() {
+            currentDifficulty = getDifficulty();
+            scores.player = 0;
+            scores.ai = 0;
+            updateScoreBoard();
+            resetPositions();
+            
+            isPlaying = true;
+            isPaused = false;
+            
+            overlay.classList.add('hidden');
+            pauseBtnHud.classList.remove('hidden'); // Show pause button
+            
+            animate();
+        }
+
+        function togglePause() {
+            if (!isPlaying && !isPaused) return;
+
+            if (isPaused) {
+                // Resume
+                isPaused = false;
+                isPlaying = true;
+                pauseMenu.classList.add('hidden');
+                animate();
+            } else {
+                // Pause
+                isPaused = true;
+                isPlaying = false; // Stop loop
+                pauseMenu.classList.remove('hidden');
+                cancelAnimationFrame(animationId);
+            }
+        }
+
+        function quitToMenu() {
+            isPaused = false;
+            isPlaying = false;
+            pauseMenu.classList.add('hidden');
+            pauseBtnHud.classList.add('hidden');
+            overlay.classList.remove('hidden');
+            
+            // Restore Title
+            titleText.innerText = "NEON HOCKEY";
+            statusText.innerText = "First to 7 wins!";
+            startBtn.innerText = "Start Game";
+
+            resetPositions();
+            drawField();
+            drawPaddle(player);
+            drawPaddle(ai);
+            drawPuck();
+        }
+
+        function goalScored(scorer) {
+            if (scorer === 'player') scores.player++;
+            else scores.ai++;
+
+            updateScoreBoard();
+            
+            // Visual feedback (shake or flash could go here)
+            resetPositions();
+
+            // Check Win
+            if (scores.player >= WIN_SCORE || scores.ai >= WIN_SCORE) {
+                isPlaying = false;
+                pauseBtnHud.classList.add('hidden'); // Hide pause button
+                overlay.classList.remove('hidden');
+                titleText.innerText = scores.player >= WIN_SCORE ? "YOU WIN!" : "GAME OVER";
+                statusText.innerText = scores.player >= WIN_SCORE ? "Amazing reflexes!" : "The AI was too fast.";
+                startBtn.innerText = "Play Again";
+                cancelAnimationFrame(animationId);
+            }
+        }
+
+        function updateScoreBoard() {
+            pScoreEl.innerText = scores.player;
+            aScoreEl.innerText = scores.ai;
+        }
+
+        // --- Input Handling ---
+
+        function updateMouse(e) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.changedTouches) {
+                clientX = e.changedTouches[0].clientX;
+                clientY = e.changedTouches[0].clientY;
+                e.preventDefault(); // Prevent scrolling on touch
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            mouse.x = clientX - rect.left;
+            mouse.y = clientY - rect.top;
+        }
+
+        window.addEventListener('mousemove', updateMouse);
+        canvas.addEventListener('touchmove', updateMouse, { passive: false });
+        canvas.addEventListener('touchstart', updateMouse, { passive: false });
+        window.addEventListener('resize', resize);
+        
+        // Button Listeners
+        startBtn.addEventListener('click', resetGame);
+        pauseBtnHud.addEventListener('click', togglePause);
+        resumeBtn.addEventListener('click', togglePause);
+        quitBtn.addEventListener('click', quitToMenu);
+
+        // --- Physics Engine ---
+
+        function update() {
+            // 1. Move Player
+            // Ease player position towards mouse for smoother feel, but clamp to left half
+            const targetX = Math.min(Math.max(player.radius, mouse.x), width / 2 - player.radius);
+            const targetY = Math.min(Math.max(player.radius, mouse.y), height - player.radius);
+            
+            // Direct mapping feels more responsive for air hockey than easing
+            player.x = targetX;
+            player.y = targetY;
+
+
+            // 2. Move AI
+            // Simple AI: Follows puck Y, but limited speed
+            let idealY = puck.y;
+            // Add some randomness/error if puck is far away
+            if (puck.x < width/2) {
+                idealY = height / 2; // Return to center if puck is on player side
+            }
+            
+            const dy = idealY - ai.y;
+            ai.y += dy * currentDifficulty.aiSpeed;
+
+            // Clamp AI to table bounds
+            ai.y = Math.max(ai.radius, Math.min(height - ai.radius, ai.y));
+            
+            // Clamp AI x (defensive position mostly)
+            let idealX = width * 0.9;
+            if (puck.x > width/2 && puck.vx > 0) {
+                // If aggressive (Hard mode), meet the puck earlier
+                const attackRange = currentDifficulty.aggressive ? 180 : 60;
+                idealX = Math.min(puck.x + attackRange, width - ai.radius); 
+            }
+            // AI moves horizontally slower than vertically
+            ai.x += (idealX - ai.x) * (currentDifficulty.aiSpeed * 0.8);
+
+
+            // 3. Move Puck
+            puck.x += puck.vx;
+            puck.y += puck.vy;
+
+            // Friction
+            puck.vx *= FRICTION;
+            puck.vy *= FRICTION;
+
+            // 4. Wall Collisions (Top/Bottom)
+            if (puck.y - puck.radius < 0) {
+                puck.y = puck.radius;
+                puck.vy = -puck.vy * WALL_BOUNCE;
+            } else if (puck.y + puck.radius > height) {
+                puck.y = height - puck.radius;
+                puck.vy = -puck.vy * WALL_BOUNCE;
+            }
+
+            // 5. Wall Collisions (Left/Right - excluding goal)
+            // Goal check
+            const goalTop = height/2 - (height * GOAL_SIZE_PCT)/2;
+            const goalBottom = height/2 + (height * GOAL_SIZE_PCT)/2;
+
+            // Left Wall
+            if (puck.x - puck.radius < 0) {
+                if (puck.y > goalTop && puck.y < goalBottom) {
+                    goalScored('ai');
+                    return; // Reset happens in goalScored
+                } else {
+                    puck.x = puck.radius;
+                    puck.vx = -puck.vx * WALL_BOUNCE;
+                }
+            }
+            // Right Wall
+            else if (puck.x + puck.radius > width) {
+                if (puck.y > goalTop && puck.y < goalBottom) {
+                    goalScored('player');
+                    return;
+                } else {
+                    puck.x = width - puck.radius;
+                    puck.vx = -puck.vx * WALL_BOUNCE;
+                }
+            }
+
+            // 6. Paddle Collisions
+            checkPaddleCollision(player);
+            checkPaddleCollision(ai);
+
+            // Cap max speed
+            const speed = Math.sqrt(puck.vx*puck.vx + puck.vy*puck.vy);
+            if (speed > MAX_SPEED) {
+                puck.vx = (puck.vx / speed) * MAX_SPEED;
+                puck.vy = (puck.vy / speed) * MAX_SPEED;
+            }
+        }
+
+        function checkPaddleCollision(paddle) {
+            const dx = puck.x - paddle.x;
+            const dy = puck.y - paddle.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDist = puck.radius + paddle.radius;
+
+            if (distance < minDist) {
+                // Collision detected!
+                
+                // 1. Resolve overlap (prevent sticking)
+                const angle = Math.atan2(dy, dx);
+                const overlap = minDist - distance;
+                const moveX = Math.cos(angle) * overlap;
+                const moveY = Math.sin(angle) * overlap;
+                puck.x += moveX;
+                puck.y += moveY;
+
+                // 2. Bounce Logic
+                // Normal vector at collision point
+                const nx = Math.cos(angle);
+                const ny = Math.sin(angle);
+
+                // Velocity relative to paddle (assuming paddle has momentary velocity? 
+                // For simplicity, we just boost the bounce. A true physics engine tracks paddle v)
+                
+                // Simple reflection
+                // v' = v - 2(v . n)n
+                const dot = puck.vx * nx + puck.vy * ny;
+                
+                puck.vx = puck.vx - 2 * dot * nx;
+                puck.vy = puck.vy - 2 * dot * ny;
+
+                // Add "Smash" factor based on collision intensity
+                // We add a bit of extra speed to simulate the paddle hitting the puck actively
+                const smashFactor = 1.2; // Reduced from 1.4 to 1.2
+                puck.vx *= smashFactor;
+                puck.vy *= smashFactor;
+                
+                // Add minimum speed on hit to prevent dead pucks
+                const currentSpeed = Math.sqrt(puck.vx**2 + puck.vy**2);
+                if (currentSpeed < 10) {
+                    puck.vx = nx * 15;
+                    puck.vy = ny * 15;
+                }
+            }
+        }
+
+        // --- Rendering ---
+
+        function drawField() {
+            // Background already cleared by fillRect or just redraw
+            ctx.fillStyle = '#1a1a1a'; // Or clearRect
+            ctx.clearRect(0,0, width, height);
+            
+            // Grid lines (subtle)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            ctx.beginPath();
+            for(let x=0; x<width; x+=gridSize) { ctx.moveTo(x,0); ctx.lineTo(x, height); }
+            for(let y=0; y<height; y+=gridSize) { ctx.moveTo(0,y); ctx.lineTo(width, y); }
+            ctx.stroke();
+
+            // Center Line
+            ctx.beginPath();
+            ctx.strokeStyle = '#00f3ff';
+            ctx.lineWidth = 4;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00f3ff';
+            ctx.moveTo(width / 2, 0);
+            ctx.lineTo(width / 2, height);
+            ctx.stroke();
+            
+            // Center Circle
+            ctx.beginPath();
+            ctx.arc(width/2, height/2, width * 0.1, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Center Dot
+            ctx.fillStyle = '#00f3ff';
+            ctx.beginPath();
+            ctx.arc(width/2, height/2, 5, 0, Math.PI*2);
+            ctx.fill();
+
+            // Goals
+            const goalH = height * GOAL_SIZE_PCT;
+            const goalY = height/2 - goalH/2;
+            
+            ctx.shadowBlur = 20;
+            
+            // Left Goal Area (Player)
+            ctx.fillStyle = 'rgba(0, 243, 255, 0.1)';
+            ctx.fillRect(0, goalY, 10, goalH);
+            
+            // Right Goal Area (AI)
+            ctx.shadowColor = '#ff0055';
+            ctx.fillStyle = 'rgba(255, 0, 85, 0.1)';
+            ctx.fillRect(width - 10, goalY, 10, goalH);
+
+            ctx.shadowBlur = 0; // Reset
+        }
+
+        function drawPaddle(p) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = p.color;
+            
+            // Outer Ring
+            ctx.strokeStyle = p.color;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Inner "Handle"
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glowy fill
+            ctx.fillStyle = p.color + '22'; // hex transparency
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPuck() {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = puck.shadow;
+            ctx.fillStyle = puck.color;
+            
+            ctx.beginPath();
+            ctx.arc(puck.x, puck.y, puck.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Detail on puck
+            ctx.strokeStyle = '#aaa';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(puck.x, puck.y, puck.radius * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            update();
+            drawField();
+            drawPaddle(player);
+            drawPaddle(ai);
+            drawPuck();
+
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Start
+        resize();
+        resetPositions();
+        drawField();
+        drawPaddle(player);
+        drawPaddle(ai);
+        drawPuck();
+
+    </script>
+</body>
+</html>

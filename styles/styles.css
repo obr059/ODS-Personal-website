@@ -1,0 +1,33 @@
+ body {
+                font-family: Arial, sans-serif;
+                font-size: 15px;
+                margin: 20px;
+                background-color: #f0f8ff;
+                color: #333333;
+            }
+            h1 {
+                font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+                color: #2e8b57;
+                padding: 5px;
+                margin: 10px;
+
+            }
+            h3 {
+                color: #ff6347;
+            }
+            a {
+                color: #1e90ff;
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+            img {
+                border: 2px solid #ccc;
+                border-radius: 15px; 
+                margin: 10px 0;
+                border-color: lemonchiffon;
+                border-width: thick;
+                image-alignment: center;
+            }
+            

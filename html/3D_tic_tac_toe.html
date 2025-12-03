@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Tic Tac Toe</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #2c3e50; /* Dark blue background */
+            font-family: 'Inter', sans-serif;
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #info-panel {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+        }
+        #gameModeSelection {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            display: flex;
+            gap: 15px;
+        }
+        #gameModeSelection label {
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: color 0.2s;
+            user-select: none;
+        }
+        #gameModeSelection input[type="radio"]:checked + label {
+            color: #3498db;
+            font-weight: 700;
+        }
+        #gameModeSelection input[type="radio"] {
+            margin: 0;
+            opacity: 0; /* Hide default radio button */
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+        #gameStatus {
+            font-size: 1.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            min-height: 1.8em;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        .player-x { color: #e74c3c; } /* Red */
+        .player-o { color: #2ecc71; } /* Green */
+
+        #gameRestart {
+            padding: 8px 16px;
+            font-size: 1em;
+            font-weight: 700;
+            color: #ffffff;
+            background: linear-gradient(145deg, #3498db, #2980b9);
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        #gameRestart:hover {
+            background: linear-gradient(145deg, #2980b9, #3498db);
+            transform: translateY(-1px);
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            font-size: 0.9em;
+            color: #bdc3c7;
+            text-align: center;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="info-panel">
+        <div id="gameModeSelection">
+            <input type="radio" id="modePVP" name="mode" value="player" checked>
+            <label for="modePVP">Player vs Player</label>
+            <input type="radio" id="modePVB" name="mode" value="bot">
+            <label for="modePVB">Player vs Bot (O)</label>
+        </div>
+        <div id="gameStatus"></div>
+        <button id="gameRestart">Restart Game</button>
+    </div>
+
+    <div id="controls">
+        Use Mouse Drag to Rotate the Board | Playing Player vs Player
+    </div>
+
+    <script>
+        // --- Game Setup ---
+        const GAME_SIZE = 3;
+        const CELL_COUNT = GAME_SIZE * GAME_SIZE * GAME_SIZE; // 27 cells
+        const CELL_SPACING = 2.0;
+        const BOX_SIZE = 0.5;
+
+        let gameBoard = new Array(CELL_COUNT).fill('');
+        let currentPlayer = 'X'; 
+        let gameActive = true;
+        let isBotTurn = false;
+        let gameMode = 'player'; // New state variable, defaults to Player vs Player
+        
+        // References to 3D objects
+        const cellObjects = []; // Stores the Three.js mesh objects
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        // Raycasting for object selection
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Status Elements
+        const statusElement = document.getElementById('gameStatus');
+        const restartButton = document.getElementById('gameRestart');
+
+        // Messages
+        const drawMessage = 'Game ended in a Draw!';
+        const winMessage = (player) => `Player <span class="player-${player.toLowerCase()}">${player}</span> has won!`;
+        const turnMessage = (player) => `It's <span class="player-${player.toLowerCase()}">${player}</span>'s turn`;
+        const botThinkingMessage = 'Bot is thinking...';
+
+
+        // --- Core Helper Functions ---
+
+        /**
+         * Updates the status display message.
+         * @param {string} messageHtml - The HTML content for the status message.
+         */
+        function updateStatus(messageHtml) {
+            statusElement.innerHTML = messageHtml;
+        }
+        
+        /**
+         * Switches the current player and updates the status message.
+         */
+        function handlePlayerChange() {
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            updateStatus(turnMessage(currentPlayer));
+        }
+
+        /**
+         * Resets the entire game state and UI.
+         */
+        function handleRestartGame() {
+            gameBoard = new Array(CELL_COUNT).fill('');
+            currentPlayer = 'X';
+            gameActive = true;
+            isBotTurn = false;
+            
+            // Re-create the 3D board
+            createBoard();
+            updateStatus(turnMessage(currentPlayer));
+
+            // Update controls display based on selected mode
+            const controlsElement = document.getElementById('controls');
+            if (gameMode === 'player') {
+                 controlsElement.innerHTML = 'Use Mouse Drag to Rotate the Board | Playing Player vs Player';
+            } else {
+                 controlsElement.innerHTML = 'Use Mouse Drag to Rotate the Board | Playing as X against Bot (O)';
+            }
+        }
+
+        // --- Winning Conditions (49 lines for 3x3x3) ---
+        // Indices are 0 to 26. (Layer * 9 + Row * 3 + Col)
+        const winningConditions = [
+            // 1. 2D Lines (Rows, Columns, Diagonals - 24 lines total)
+            // Layer 0 (Indices 0-8)
+            [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
+            [0, 3, 6], [1, 4, 7], [2, 5, 8], // Columns
+            [0, 4, 8], [2, 4, 6], // Diagonals
+            // Layer 1 (Indices 9-17)
+            [9, 10, 11], [12, 13, 14], [15, 16, 17],
+            [9, 12, 15], [10, 13, 16], [11, 14, 17],
+            [9, 13, 17], [11, 13, 15],
+            // Layer 2 (Indices 18-26)
+            [18, 19, 20], [21, 22, 23], [24, 25, 26],
+            [18, 21, 24], [19, 22, 25], [20, 23, 26],
+            [18, 22, 26], [20, 22, 24],
+
+            // 2. Vertical Lines (9 lines total)
+            [0, 9, 18], [1, 10, 19], [2, 11, 20],
+            [3, 12, 21], [4, 13, 22], [5, 14, 23],
+            [6, 15, 24], [7, 16, 25], [8, 17, 26],
+
+            // 3. Plane-Crossing Diagonals (12 lines total)
+            // Across Rows (X-Z Diagonals)
+            [0, 10, 20], [2, 10, 18], // Top-Front-Diagonal Plane
+            [3, 13, 23], [5, 13, 21], // Middle-Front-Diagonal Plane
+            [6, 16, 26], [8, 16, 24], // Bottom-Front-Diagonal Plane
+            // Across Columns (Y-Z Diagonals)
+            [0, 12, 24], [6, 12, 18], // Left-Side-Diagonal Plane
+            [1, 13, 25], [7, 13, 19], // Center-Side-Diagonal Plane
+            [2, 14, 26], [8, 14, 20], // Right-Side-Diagonal Plane
+
+            // 4. Main 3D Diagonals (4 lines total)
+            [0, 13, 26], // (0,0,0) to (2,2,2)
+            [2, 13, 24], // (0,2,0) to (2,0,2)
+            [6, 13, 20], // (2,0,0) to (0,2,2)
+            [8, 13, 18], // (2,2,0) to (0,0,2)
+        ];
+
+        // --- Bot AI Functions ---
+        
+        /**
+         * Helper function to check if a player can win or be blocked at a specific move.
+         * Looks for a condition where two spots are occupied by 'player' and the third is empty.
+         * @param {string} player - The player to check ('X' or 'O').
+         * @returns {number} The index of the winning/blocking move, or -1.
+         */
+        function checkWinningMove(player) {
+            for (const condition of winningConditions) {
+                let count = 0;
+                let emptyIndex = -1;
+
+                condition.forEach(index => {
+                    if (gameBoard[index] === player) {
+                        count++;
+                    } else if (gameBoard[index] === '') {
+                        emptyIndex = index;
+                    }
+                });
+
+                // If the player has two in a row and the third is empty, this is the crucial spot
+                if (count === 2 && emptyIndex !== -1) {
+                    return emptyIndex;
+                }
+            }
+            return -1;
+        }
+
+        /**
+         * Implements a simple, strategic AI for the bot ('O').
+         */
+        function findBestMove3D() {
+            const emptyCells = gameBoard.map((val, idx) => val === '' ? idx : -1).filter(idx => idx !== -1);
+            if (emptyCells.length === 0) return -1; 
+
+            // 1. Check for immediate win for 'O' (Bot)
+            let move = checkWinningMove('O');
+            if (move !== -1) return move;
+
+            // 2. Check for immediate win for 'X' (Player) and block it
+            move = checkWinningMove('X');
+            if (move !== -1) return move;
+
+            // 3. Take the main center (index 13) if available (most powerful position)
+            if (gameBoard[13] === '') return 13;
+
+            // 4. Take a random open spot
+            return emptyCells[Math.floor(Math.random() * emptyCells.length)];
+        }
+        
+        /**
+         * Executes the bot's move (Player 'O').
+         */
+        function botMove() {
+            if (!gameActive || gameMode !== 'bot') return;
+
+            isBotTurn = true;
+            updateStatus(`<span class="player-o">${botThinkingMessage}</span>`); // Inform user bot is moving
+
+            const bestMoveIndex = findBestMove3D();
+
+            if (bestMoveIndex !== -1) {
+                // Simulate a slight delay for better user experience
+                setTimeout(() => {
+                    // Get the Three.js mesh object for the selected cell
+                    const cellMesh = cellObjects[bestMoveIndex];
+                    if (cellMesh) {
+                        performMove(bestMoveIndex, 'O', cellMesh);
+                        // Check result and switch turn back to 'X' (or end game)
+                        handleResultValidation(); 
+                    }
+                    isBotTurn = false; // Bot turn finished
+                }, 750); // 750ms delay
+            } else {
+                 isBotTurn = false;
+            }
+        }
+
+        
+        // --- Three.js Initialization ---
+
+        function initThreeJS() {
+            // Renderer Setup
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Camera Position
+            camera.position.z = 10;
+            camera.position.y = 5;
+            camera.lookAt(0, 0, 0);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 5); // soft white light
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(directionalLight);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            window.addEventListener('click', onMouseClick, false);
+            restartButton.addEventListener('click', handleRestartGame);
+            
+            // Mode selection listener
+            document.getElementById('gameModeSelection').addEventListener('change', (e) => {
+                gameMode = e.target.value;
+                handleRestartGame();
+            });
+
+            // Mouse controls for rotation
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            const container = renderer.domElement;
+
+            container.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            container.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            container.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+
+                // Adjust rotation speed
+                const rotationSpeed = 0.005; 
+                
+                // Rotate the entire scene root (all cells)
+                const boardGroup = scene.getObjectByName('boardGroup');
+                if (boardGroup) {
+                    boardGroup.rotation.y += deltaX * rotationSpeed;
+                    boardGroup.rotation.x += deltaY * rotationSpeed;
+                }
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            // Start the game initialization
+            handleRestartGame();
+            animate();
+        }
+
+        /**
+         * Creates the 3x3x3 grid of cells (small cubes).
+         */
+        function createBoard() {
+            // Remove previous board if it exists
+            const existingGroup = scene.getObjectByName('boardGroup');
+            if (existingGroup) {
+                scene.remove(existingGroup);
+                // Dispose geometries and materials of removed objects to free memory
+                existingGroup.traverse((object) => {
+                    if (object.isMesh) {
+                        object.geometry.dispose();
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(m => m.dispose());
+                        } else {
+                            object.material.dispose();
+                        }
+                    }
+                });
+            }
+
+            // Group to hold all cells for easy rotation
+            const boardGroup = new THREE.Group();
+            boardGroup.name = 'boardGroup';
+            scene.add(boardGroup);
+
+            // Define Cell Geometry (transparent cube wireframe)
+            const geometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xcccccc, 
+                wireframe: true,
+                transparent: true,
+                opacity: 0.2
+            });
+
+            cellObjects.length = 0; // Clear the array
+
+            let index = 0;
+            const offset = (GAME_SIZE - 1) * CELL_SPACING / 2;
+
+            for (let z = 0; z < GAME_SIZE; z++) { // Layer (Depth)
+                for (let y = 0; y < GAME_SIZE; y++) { // Row (Height)
+                    for (let x = 0; x < GAME_SIZE; x++) { // Column (Width)
+                        const cell = new THREE.Mesh(geometry, material.clone());
+                        cell.position.set(
+                            x * CELL_SPACING - offset,
+                            y * CELL_SPACING - offset,
+                            z * CELL_SPACING - offset
+                        );
+                        cell.userData = { index: index, occupied: false }; // Store index for game logic
+                        boardGroup.add(cell);
+                        cellObjects.push(cell);
+                        index++;
+                    }
+                }
+            }
+        }
+
+        // --- Game Logic Functions ---
+
+        /**
+         * Handles the mouse click event for cell selection via Raycasting.
+         * @param {Event} event - The click event.
+         */
+        function onMouseClick(event) {
+            // Prevent clicks if game is over or if it's the bot's turn
+            if (!gameActive || isBotTurn) return;
+
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the raycaster with the camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+
+            // Find intersecting objects
+            const boardGroup = scene.getObjectByName('boardGroup');
+            if (!boardGroup) return;
+
+            // Only intersect with the cell wireframes, not the markers
+            const cellsToIntersect = cellObjects.filter(c => !c.userData.occupied);
+
+            const intersects = raycaster.intersectObjects(cellsToIntersect);
+
+            if (intersects.length > 0) {
+                const clickedCell = intersects[0].object;
+                const index = clickedCell.userData.index;
+
+                // Check if cell is available
+                if (gameBoard[index] === '') {
+                    performMove(index, currentPlayer, clickedCell);
+                    handleResultValidation();
+                    
+                    // After the turn has switched to the opponent, check if the opponent is the bot
+                    if (gameActive && currentPlayer === 'O' && gameMode === 'bot') {
+                        botMove();
+                    }
+                    // If gameMode is 'player', the logic simply waits for the next human click.
+                }
+            }
+        }
+
+        /**
+         * Places the player's marker (X or O) on the 3D board.
+         * @param {number} index - The cell index (0-26).
+         * @param {string} player - 'X' or 'O'.
+         * @param {THREE.Mesh} cellMesh - The Three.js mesh object.
+         */
+        function performMove(index, player, cellMesh) {
+            gameBoard[index] = player;
+            cellMesh.userData.occupied = true;
+
+            // Create 3D marker: Sphere for O, X for X
+            const color = player === 'X' ? 0xe74c3c : 0x2ecc71; // Red for X, Green for O
+            const material = new THREE.MeshPhongMaterial({ color: color, flatShading: true });
+            
+            let markerObject;
+            const boardGroup = scene.getObjectByName('boardGroup');
+
+            if (player === 'X') {
+                // Create a cross using two cylinders
+                const geometry = new THREE.CylinderGeometry(0.1, 0.1, BOX_SIZE * 1.5, 32);
+                
+                const marker1 = new THREE.Mesh(geometry, material);
+                const marker2 = new THREE.Mesh(geometry, material.clone());
+                
+                marker1.rotation.z = Math.PI / 4;
+                marker2.rotation.y = Math.PI / 4;
+                
+                const group = new THREE.Group();
+                group.add(marker1);
+                group.add(marker2);
+                markerObject = group;
+
+            } else {
+                // Create a sphere for 'O'
+                const geometry = new THREE.SphereGeometry(BOX_SIZE / 2.5, 32, 32);
+                markerObject = new THREE.Mesh(geometry, material);
+            }
+
+            markerObject.position.copy(cellMesh.position);
+            boardGroup.add(markerObject);
+
+
+            // Hide the cell wireframe once occupied
+            cellMesh.material.opacity = 0.05; 
+        }
+
+        /**
+         * Checks if the current board state results in a win or a draw.
+         */
+        function handleResultValidation() {
+            let winningLine = null;
+
+            for (const condition of winningConditions) {
+                const [a, b, c] = condition;
+                
+                const markerA = gameBoard[a];
+                const markerB = gameBoard[b];
+                const markerC = gameBoard[c];
+
+                if (markerA === '' || markerB === '' || markerC === '') {
+                    continue;
+                }
+                
+                if (markerA === markerB && markerB === markerC) {
+                    winningLine = condition;
+                    break;
+                }
+            }
+
+            if (winningLine) {
+                gameActive = false;
+                updateStatus(winMessage(currentPlayer));
+                highlightWinningLine(winningLine);
+                return;
+            }
+
+            // Check for Draw
+            let roundDraw = !gameBoard.includes('');
+            if (roundDraw) {
+                gameActive = false;
+                updateStatus(drawMessage);
+                return;
+            }
+
+            // Switch players
+            handlePlayerChange();
+        }
+
+        /**
+         * Highlights the three markers that formed the winning line.
+         * @param {number[]} indices - Array of cell indices.
+         */
+        function highlightWinningLine(indices) {
+            const boardGroup = scene.getObjectByName('boardGroup');
+            if (!boardGroup) return;
+
+            // Get the 3D positions of the winning cells
+            const winningPositions = indices.map(i => cellObjects[i].position);
+            
+            // Find the 3D markers corresponding to the winning positions
+            const winningMarkers = [];
+            
+            // Check all children of the board group (which includes markers and empty cells)
+            boardGroup.children.forEach(child => {
+                // Check if this child object is a marker (not the original wireframe BoxGeometry)
+                if (child.type === 'Group' || (child.type === 'Mesh' && child.geometry.type !== 'BoxGeometry')) {
+                    // Check if its position matches any winning position
+                    const isWinning = winningPositions.some(pos => pos.equals(child.position));
+                    if (isWinning) {
+                         winningMarkers.push(child);
+                    }
+                }
+            });
+
+            // Simple visual effect: make the winning markers glow (increase brightness)
+            winningMarkers.forEach(marker => {
+                if (marker.material) {
+                    marker.material.emissive = new THREE.Color(0xfff700);
+                    marker.material.emissiveIntensity = 2;
+                } else if (marker.children.length > 0) {
+                     // For the 'X' group
+                     marker.children.forEach(m => {
+                        m.material.emissive = new THREE.Color(0xfff700);
+                        m.material.emissiveIntensity = 2;
+                     });
+                }
+            });
+
+            // Draw a line through the winning sequence
+            if (winningMarkers.length === 3) {
+                 const startPos = winningPositions[0]; // Use stored position from cellObjects
+                 const endPos = winningPositions[2];
+                 const lineMaterial = new THREE.LineBasicMaterial({ color: 0xfff700, linewidth: 5 });
+                 const points = [];
+                 points.push(startPos);
+                 points.push(endPos);
+                 const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                 const line = new THREE.Line(lineGeometry, lineMaterial);
+                 boardGroup.add(line);
+            }
+        }
+
+
+        // --- Three.js Rendering Loop ---
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Initialize the game when the window loads
+        window.onload = initThreeJS;
+
+    </script>
+</body>
+</html>
